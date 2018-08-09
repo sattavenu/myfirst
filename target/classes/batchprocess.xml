@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+    <db:oracle-config name="Oracle_Configuration" host="localhost" port="1521" instance="xe" user="system" password="venu" doc:name="Oracle Configuration"/>
+    <db:oracle-config name="Oracle_Configuration1" host="localhost" port="1521" instance="xe" user="system" password="venu" doc:name="Oracle Configuration"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <batch:job name="batchprocessBatch">
+        <batch:process-records>
+            <batch:step name="Batch_Step">
+                <batch:set-record-variable variableName="data" value="#[payload]" doc:name="Record Variable"/>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload map (
+	{
+		batchid: $.batchid,
+		batchname: $.batchname
+	}
+)]]></dw:set-payload>
+                </dw:transform-message>
+                <batch:commit size="3" doc:name="Batch Commit">
+                    <file:outbound-endpoint path="C:\Users\madhu\Desktop\New folder" responseTimeout="10000" doc:name="File"/>
+                </batch:commit>
+            </batch:step>
+            <batch:step name="success">
+                <db:insert config-ref="Oracle_Configuration1" doc:name="Database">
+                    <db:parameterized-query><![CDATA[insert into successtable values (#[payload.batchid],#['success'])]]></db:parameterized-query>
+                </db:insert>
+            </batch:step>
+            <batch:step name="failure" accept-policy="ONLY_FAILURES">
+                <db:insert config-ref="Oracle_Configuration" doc:name="Database">
+                    <db:parameterized-query><![CDATA[insert into failuretable values (#[payload.batchid],#['failed'])]]></db:parameterized-query>
+                </db:insert>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger level="INFO" doc:name="Logger" message="total records: #[payload], success records : #[payload.successtable], failure records: #[payload.failuretable]"/>
+        </batch:on-complete>
+    </batch:job>
+    <flow name="batchprocessFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <db:select config-ref="Oracle_Configuration" doc:name="Database">
+            <db:parameterized-query><![CDATA[select * from batch]]></db:parameterized-query>
+        </db:select>
+        <batch:execute name="batchprocessBatch" doc:name="Batch Execute"/>
+    </flow>
+</mule>
